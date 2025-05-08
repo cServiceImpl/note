@@ -1,0 +1,116 @@
+stages:
+  - review
+  - sonar_scan
+  - test
+  - build
+  - sync
+
+variables:
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+  ECLOUD_DOCKER_REGISTRY: paas-fe30816e.ecis.huadong-7.cmecloud.cn/saas
+  HUAWEI_DOCKER_REGISTRY: swr.cn-north-4.myhuaweicloud.com/mbo
+  DOCKER_IMAGE_NAME: $CI_PROJECT_NAME
+  SONAR_URL: http://10.144.147.32:19000
+  SONAR_ACCOUNT: admin
+  SONAR_PASSWORD: Meiyou@123!
+
+review:
+  stage: review
+  tags:
+    - mbo
+    - java17
+  before_script:
+    - git fetch --all --prune
+  script:
+    - whoami
+    - echo -e "Running CI For \n【Project Name】$CI_PROJECT_NAME \n【Project Branch】$CI_COMMIT_REF_NAME \n【Commit SHA】$(echo $CI_COMMIT_SHA | cut -c1-8)"
+  only:
+    - dev
+    - tags
+
+sonar_scan_job:
+  stage: sonar_scan
+  tags:
+    - mbo
+    - java17
+  script:
+    - echo "Using SonarQube analysis Start >>>>>>>>>"
+    - sonar-scanner -Dsonar.projectName=$CI_PROJECT_NAME -Dsonar.projectKey=$CI_PROJECT_NAME  -Dsonar.language=java -Dsonar.java.binaries=. -Dsonar.host.url=$SONAR_URL -Dsonar.login=$SONAR_ACCOUNT -Dsonar.password=$SONAR_PASSWORD
+    - echo "Using SonarQube analysis Finish <<<<<<<<<"
+  when: always
+  only:
+    - dev
+
+test_job:
+  stage: test
+  tags:
+    - mbo
+    - java17
+  script:
+    - echo "Maven Clean Test Start >>>>>>>>>"
+    - mvn $MAVEN_CLI_OPTS clean test
+    - echo "Maven Clean Test Finish <<<<<<<<<"
+  only:
+    - paas-demo
+
+build_dev:
+  stage: build
+  tags:
+    - mbo
+    - java17
+  script:
+    - echo "Building Docker image and pushing to ecloud Container Registry Start >>>>>>>>>"
+    - IMAGE_NAME="$ECLOUD_DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:$(date +%Y%m%d)-$(echo $CI_COMMIT_REF_NAME | tr / -)-$(echo $CI_COMMIT_SHA | cut -c1-8)"
+    - docker build -t $IMAGE_NAME .
+    - docker push $IMAGE_NAME
+    - echo "Building Docker image and pushing to ecloud Container Registry Finish <<<<<<<<<"
+  only:
+    - paas-demo
+
+build_tags:
+  stage: build
+  tags:
+    - mbo
+    - java17
+  before_script:
+    - IMAGE_NAME="$ECLOUD_DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
+    - BRANCH=$(git branch -r --contains $CI_COMMIT_SHA | grep -v HEAD | head -n 1 | tr -d '[:space:]' | sed 's/origin\///')
+    - echo -e "This tag was created from 【branch】【$BRANCH】 \n 【image-name】$IMAGE_NAME \n"
+  script:
+    - |
+      if [ "$BRANCH" = "test" ]; then
+        echo "Building Docker image and pushing to e-cloud Container Registry Start >>>>>>>>>"
+        docker build -t $IMAGE_NAME .
+        docker push $IMAGE_NAME
+        echo "Building Docker image and pushing to e-cloud Container Registry Finish <<<<<<<<<"
+      else
+        echo "Skipping build as the branch is not 'test'"
+        exit 0
+      fi
+  only:
+    - tags
+
+image_sync:
+  stage: sync
+  tags:
+    - mbo
+    - java17
+  when: manual
+  before_script:
+    - ECLOUD_IMAGE_NAME="$ECLOUD_DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
+    - HUAWEI_IMAGE_NAME="$HUAWEI_DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:$CI_COMMIT_TAG"
+    - BRANCH=$(git branch -r --contains $CI_COMMIT_SHA | grep -v HEAD | head -n 1 | tr -d '[:space:]' | sed 's/origin\///')
+    - echo -e "This tag was created from 【branch】 $BRANCH \n"
+  script:
+    - |
+      if [ "$BRANCH" = "test" ]; then
+        echo "Building Docker image and pushing to Huaweiyun Container Registry Start >>>>>>>>>"
+        docker tag $ECLOUD_IMAGE_NAME $HUAWEI_IMAGE_NAME
+        docker push $HUAWEI_IMAGE_NAME
+        echo "Building Docker image and pushing to Huaweiyun Container Registry Finish <<<<<<<<<"
+      else
+        echo "Skipping build as the branch is not 'test'"
+        exit 0
+      fi
+  only:
+    - tags

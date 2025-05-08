@@ -1,0 +1,101 @@
+server:
+  port: 8081
+
+spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://10.170.136.88:30308/mb_manage?useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&serverTimezone=Asia/Shanghai&useSSL=false
+    username: root
+    password: root
+  redis:
+    host: 192.168.0.29
+    port: 6379
+    password:
+    database: 9
+  kafka:
+    producer:
+      bootstrap-servers: 192.168.0.178:9092,192.168.0.22:9092,192.168.0.66:9092
+      acks: 1
+    template:
+      default-topic: EVENT_COLLECTION_DEV
+  cloud:
+    nacos:
+      config:
+        server-addr: http://10.170.136.88:8848/
+        namespace: public
+      username: nacos
+      password: nacos
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+        loggerLevel: basic
+  circuitbreaker:
+    enabled: true
+
+mybatis-plus:
+  mapper-locations: classpath:/mapper/*Mapper.xml
+  configuration:
+    token:
+      updateIdKey: userId
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+swagger:
+  service:
+    enabled: true
+
+authorization:
+  enabled: true
+  secret-key: 123456
+
+obs:
+  supplier: ecloud
+  endpoint: eos.ningbo-6.cmecloud.cn
+  bucketName: mb-saas-dev
+  accessKeyId: 7S79E3KB4C0B1Z9A8J4J
+  accessKeySecret: lhRrenJAUMeJrA48ZHh2TdTlYoDn2bICcEcQMfgc
+  regionId: eos-ningbo-6
+  validTime: 900
+  server: https://eos-ningbo-6.cmecloud.cn
+
+mqtt-gateway:
+  auth:
+    server:
+      username: username
+      password: password
+    cloud:
+      username: username
+      password: password
+
+logging:
+  level:
+    com.magicbox.cloud.terminal.dao: debug
+mybatis:
+  # 控制台打印sql日志
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+mqtt:
+  enabled: true
+  host: nxmq-acceptor-service.nxmqcluster-test1.svc.cluster.local
+  port: 1883
+  clientIdPrefix: mb_server_terminal_
+  logoutTopicPrefix: mb_channel/user/logout/
+  username: username
+  password: password
+  cleanSession: false
+  keepAlive: 120
+  sessionExpiryInterval: 120
+  connectionTimeout: 30
+  sendDelayedInterval: 3
+  retryCount: 3
+  retryInterval: 3
