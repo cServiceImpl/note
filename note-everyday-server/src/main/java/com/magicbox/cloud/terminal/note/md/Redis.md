@@ -127,7 +127,7 @@ public class ProductService {
 }
 ```
 
-##### 部署redis
+### 部署redis
 
 ```bash
 docker pull redis
@@ -166,4 +166,94 @@ redis: 这是要从中启动容器的镜像名称。
 redis-server /etc/redis/redis.conf --appendonly yes: 这是要在容器内执行的命令。它启动 Redis 服务器，并使用前面挂载的配置文件（/etc/redis/redis.conf）。--appendonly yes 是一个 Redis 命令行参数，它告诉 Redis 使用 AOF（Append Only File）持久化模式。在 AOF 模式下，Redis 将每个写命令（如 SET、LPUSH 等）追加到一个日志文件中，并在服务器重启时重新执行这些命令来恢复数据。
 ```
 
+### Redis多数据源配置
 
+配置：
+
+```java
+@Configuration
+@AutoConfigureBefore(RedisAutoConfiguration.class)
+@EnableConfigurationProperties({PrimaryRedisProperties.class, ReplicaRedisProperties.class})
+public class RedisConfig {
+
+    @Bean(name = "primaryRedisConnectionFactory")
+    public RedisConnectionFactory primaryRedisConnectionFactory(PrimaryRedisProperties properties) {
+        return createRedisConnectionFactory(properties);
+    }
+
+    @Bean(name = "replicaRedisConnectionFactory")
+    public RedisConnectionFactory replicaRedisConnectionFactory(ReplicaRedisProperties properties) {
+        return createRedisConnectionFactory(properties);
+    }
+
+    private RedisConnectionFactory createRedisConnectionFactory(Object redisProperties) {
+        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration();
+        if (redisProperties instanceof PrimaryRedisProperties) {
+            PrimaryRedisProperties props = (PrimaryRedisProperties) redisProperties;
+            config.setHostName(props.getHost());
+            config.setPort(props.getPort());
+            config.setDatabase(props.getDatabase());
+            config.setPassword(RedisPassword.of(props.getPassword()));
+        } else if (redisProperties instanceof ReplicaRedisProperties) {
+            ReplicaRedisProperties props = (ReplicaRedisProperties) redisProperties;
+            config.setHostName(props.getHost());
+            config.setPort(props.getPort());
+            config.setDatabase(props.getDatabase());
+            config.setPassword(RedisPassword.of(props.getPassword()));
+        }
+        return new LettuceConnectionFactory(config);
+    }
+
+    @Bean(name = "primaryRedisTemplate")
+    public RedisTemplate<String, Object> primaryRedisTemplate(
+            @Qualifier("primaryRedisConnectionFactory") RedisConnectionFactory factory) {
+        return createRedisTemplate(factory);
+    }
+
+    @Bean(name = "replicaRedisTemplate")
+    public RedisTemplate<String, Object> replicaRedisTemplate(
+            @Qualifier("replicaRedisConnectionFactory") RedisConnectionFactory factory) {
+        return createRedisTemplate(factory);
+    }
+
+
+    private RedisTemplate<String, Object> createRedisTemplate(RedisConnectionFactory factory) {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(factory);
+
+        // 设置key的序列化方式
+        StringRedisSerializer stringRedisSerializer = new StringRedisSerializer();
+        template.setKeySerializer(stringRedisSerializer);
+        template.setHashKeySerializer(stringRedisSerializer);
+
+        // 设置value的序列化方式
+        Jackson2JsonRedisSerializer<Object> jackson2JsonRedisSerializer = new Jackson2JsonRedisSerializer<>(Object.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
+        objectMapper.enableDefaultTyping(ObjectMapper.DefaultTyping.NON_FINAL);
+        jackson2JsonRedisSerializer.setObjectMapper(objectMapper);
+        template.setValueSerializer(jackson2JsonRedisSerializer);
+        template.setHashValueSerializer(jackson2JsonRedisSerializer);
+
+        template.afterPropertiesSet();
+        return template;
+    }
+}
+```
+
+使用：
+
+```java
+@Service
+public class WriteToPrimaryService {
+
+    @Autowired
+    @Qualifier("primaryRedisTemplate")
+    private RedisTemplate<String, Object> redisTemplate;
+
+    public void writeData(String key, Object value) {
+        redisTemplate.opsForValue().set(key, value);
+    }
+}
+
+```
